@@ -28,10 +28,25 @@
         <label for="vote-skip-radio">Skip</label>
       </div>
 
+      {% if item.best_dev_tool %}
+      <div class="field">
+        <label for="dev-tool-score"><strong>Best Developer Tool score</strong> (1 = poor, 3 = excellent)</label>
+        <select name="dev_tool_score" id="dev-tool-score">
+          <option value="">-- Select a score --</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+      {% endif %}
+
       <input type="submit" name="action" value="Submit" id="vote-submit" class="button-full button-gap">
 
       <input type="hidden" name="item_id" value="{{ item.id }}">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      {% if request.args.get('secret') %}
+      <input type="hidden" name="secret" value="{{ request.args.get('secret') }}">
+      {% endif %}
     </form>
 
     <script src="{{ url_for('static', filename='js/smart-button-toggle.js') }}"></script>

@@ -15,6 +15,9 @@
     <form action="{{ url_for('welcome_done') }}" method="post">
       <input type="submit" name="action" value="Continue" class="button-full button-gap positive">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      {% if request.args.get('secret') %}
+      <input type="hidden" name="secret" value="{{ request.args.get('secret') }}">
+      {% endif %}
     </form>
   </div>
 </div>

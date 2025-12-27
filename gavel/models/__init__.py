@@ -14,6 +14,7 @@ db = SerializableAlchemy()
 from gavel.models.annotator import Annotator, ignore_table
 from gavel.models.item import Item, view_table
 from gavel.models.decision import Decision
+from gavel.models.dev_tool_score import DevToolScore
 from gavel.models.setting import Setting
 
 from sqlalchemy.exc import IntegrityError

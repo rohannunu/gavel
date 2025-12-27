@@ -24,16 +24,21 @@ class Annotator(db.Model):
     prev = db.relationship('Item', foreign_keys=[prev_id], uselist=False)
     ignore = db.relationship('Item', secondary=ignore_table)
 
+    dev_tool_scores = db.relationship('DevToolScore', back_populates='annotator', cascade='all, delete-orphan')
+    path_preference = db.Column(db.Enum('general', 'pro', name='annotator_path'), nullable=True)
+
     alpha = db.Column(db.Float)
     beta = db.Column(db.Float)
 
-    def __init__(self, name, email, description):
+    def __init__(self, name, email, description, path_preference=None):
         self.name = name
         self.email = email
         self.description = description
         self.alpha = crowd_bt.ALPHA_PRIOR
         self.beta = crowd_bt.BETA_PRIOR
         self.secret = utils.gen_secret(32)
+        if path_preference:
+            self.path_preference = path_preference.lower()
 
     def update_next(self, new_next):
         if new_next is not None:

@@ -4,6 +4,7 @@ from gavel.constants import *
 import gavel.settings as settings
 import gavel.utils as utils
 import gavel.stats as stats
+from sqlalchemy.sql import func
 from flask import (
     redirect,
     render_template,
@@ -14,6 +15,7 @@ import urllib.parse
 import xlrd
 
 ALLOWED_EXTENSIONS = set(['csv', 'xlsx', 'xls'])
+ITEM_PATHS = ('general', 'pro')
 
 @app.route('/admin/')
 @utils.requires_auth
@@ -21,6 +23,8 @@ def admin():
     stats.check_send_telemetry()
     annotators = Annotator.query.order_by(Annotator.id).all()
     items = Item.query.order_by(Item.id).all()
+    general_ranked = Item.query.filter(Item.path == 'general').order_by(desc(Item.mu)).all()
+    pro_ranked = Item.query.filter(Item.path == 'pro').order_by(desc(Item.mu)).all()
     decisions = Decision.query.all()
     counts = {}
     item_counts = {}
@@ -39,6 +43,15 @@ def admin():
                 skipped[i.id] = skipped.get(i.id, 0) + 1
     # settings
     setting_closed = Setting.value_of(SETTING_CLOSED) == SETTING_TRUE
+    dev_tool_scores = db.session.query(
+        Item,
+        func.avg(DevToolScore.score).label('avg_score'),
+        func.count(DevToolScore.id).label('score_count')
+    ).outerjoin(DevToolScore).filter(
+        Item.best_dev_tool == True
+    ).group_by(Item.id).order_by(
+        desc('avg_score')
+    ).all()
     return render_template(
         'admin.html',
         annotators=annotators,
@@ -46,8 +59,11 @@ def admin():
         item_counts=item_counts,
         skipped=skipped,
         items=items,
+        general_ranked=general_ranked,
+        pro_ranked=pro_ranked,
         votes=len(decisions),
         setting_closed=setting_closed,
+        dev_tool_scores=dev_tool_scores,
     )
 
 @app.route('/admin/item', methods=['POST'])
@@ -57,13 +73,28 @@ def item():
     if action == 'Submit':
         data = parse_upload_form()
         if data:
-            # validate data
-            for index, row in enumerate(data):
-                if len(row) != 3:
-                    return utils.user_error('Bad data: row %d has %d elements (expecting 3)' % (index + 1, len(row)))
+            default_path = (request.form.get('default_path') or 'general').lower()
+            if default_path not in ITEM_PATHS:
+                return utils.user_error('Default path "%s" is invalid (expected "general" or "pro")' % default_path)
+            default_best_dev_tool = _parse_bool(request.form.get('default_best_dev_tool'), False)
+
+            def normalize_row(index, row):
+                if len(row) < 3 or len(row) > 5:
+                    raise ValueError('row %d has %d elements (expecting 3 to 5)' % (index + 1, len(row)))
+                path_value = (row[3] if len(row) >= 4 else default_path)
+                path_value = str(path_value).strip().lower() if path_value is not None else default_path
+                if path_value not in ITEM_PATHS:
+                    raise ValueError('row %d has invalid path "%s" (expected "general" or "pro")' % (index + 1, path_value))
+                best_dev_tool_value = _parse_bool(row[4], default_best_dev_tool) if len(row) >= 5 else default_best_dev_tool
+                return (row[0], row[1], row[2], path_value, best_dev_tool_value)
+
+            try:
+                normalized = [normalize_row(index, row) for index, row in enumerate(data)]
+            except ValueError as e:
+                return utils.user_error('Bad data: %s' % str(e))
             def tx():
-                for row in data:
-                    _item = Item(*row)
+                for row in normalized:
+                    _item = Item(row[0], row[1], row[2], path=row[3], best_dev_tool=row[4])
                     db.session.add(_item)
                 db.session.commit()
             with_retries(tx)
@@ -110,13 +141,39 @@ def parse_upload_form():
         if extension == "xlsx" or extension == "xls":
             workbook = xlrd.open_workbook(file_contents=f.read())
             worksheet = workbook.sheet_by_index(0)
-            data = list(utils.cast_row(worksheet.row_values(rx, 0, 3)) for rx in range(worksheet.nrows) if worksheet.row_len(rx) == 3)
+            data = list(utils.cast_row(worksheet.row_values(rx, 0, 5)) for rx in range(worksheet.nrows) if worksheet.row_len(rx) >= 3)
         elif extension == "csv":
             data = utils.data_from_csv_string(f.read().decode("utf-8"))
     else:
         csv = request.form['data']
         data = utils.data_from_csv_string(csv)
-    return data
+    cleaned = []
+    for row in data:
+        # drop trailing empty cells so row lengths match provided data
+        while len(row) > 0 and (row[-1] is None or str(row[-1]).strip() == ''):
+            row = row[:-1]
+        cleaned.append(row)
+    return cleaned
+
+
+def _parse_bool(value, default=False):
+    '''
+    Normalize truthy/falsey strings or numbers into a boolean, falling back to
+    the provided default if the value is empty or unknown.
+    '''
+    if value is None:
+        return default
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ('1', 'true', 'yes', 'y', 'on'):
+            return True
+        if lowered in ('0', 'false', 'no', 'n', 'off'):
+            return False
+    try:
+        intval = int(value)
+        return bool(intval)
+    except Exception:
+        return default
 
 
 @app.route('/admin/item_patch', methods=['POST'])
@@ -132,9 +189,16 @@ def item_patch():
             item.name = request.form['name']
         if 'description' in request.form:
             item.description = request.form['description']
+        if 'path' in request.form:
+            path_value = request.form['path'].lower()
+            if path_value not in ITEM_PATHS:
+                return utils.user_error('Path "%s" is invalid (expected "general" or "pro")' % path_value)
+            item.path = path_value
+        if 'best_dev_tool' in request.form:
+            item.best_dev_tool = _parse_bool(request.form['best_dev_tool'], item.best_dev_tool)
         db.session.commit()
     with_retries(tx)
-    return redirect(url_for('item_detail', item_id=item.id))
+    return redirect(request.referrer or url_for('item_detail', item_id=item.id))
 
 @app.route('/admin/annotator', methods=['POST'])
 @utils.requires_auth
@@ -146,11 +210,17 @@ def annotator():
         if data:
             # validate data
             for index, row in enumerate(data):
-                if len(row) != 3:
-                    return utils.user_error('Bad data: row %d has %d elements (expecting 3)' % (index + 1, len(row)))
+                if len(row) < 3 or len(row) > 4:
+                    return utils.user_error('Bad data: row %d has %d elements (expecting 3 or 4: name,email,description[,path]))' % (index + 1, len(row)))
             def tx():
                 for row in data:
-                    annotator = Annotator(*row)
+                    path_pref = None
+                    if len(row) == 4 and row[3]:
+                        normalized_path = row[3].strip().lower()
+                        if normalized_path not in ITEM_PATHS:
+                            return utils.user_error('Bad data: row %d has invalid path "%s" (expected "general" or "pro")' % (index + 1, row[3]))
+                        path_pref = normalized_path
+                    annotator = Annotator(row[0], row[1], row[2], path_preference=path_pref)
                     added.append(annotator)
                     db.session.add(annotator)
                 db.session.commit()
@@ -170,6 +240,18 @@ def annotator():
         target_state = action == 'Enable'
         def tx():
             Annotator.by_id(annotator_id).active = target_state
+            db.session.commit()
+        with_retries(tx)
+    elif action == 'Patch':
+        annotator_id = request.form['annotator_id']
+        path_pref = request.form.get('path_preference')
+        if path_pref and path_pref not in ITEM_PATHS:
+            return utils.user_error('Path "%s" is invalid (expected "general" or "pro")' % path_pref)
+        def tx():
+            annotator = Annotator.by_id(annotator_id)
+            if not annotator:
+                return utils.user_error('Annotator %s not found ' % annotator_id)
+            annotator.path_preference = path_pref if path_pref else None
             db.session.commit()
         with_retries(tx)
     elif action == 'Delete':

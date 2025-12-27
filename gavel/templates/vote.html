@@ -46,10 +46,37 @@
         <label for="vote-skip-radio">Skip</label>
       </div>
 
+      {% if prev.best_dev_tool or next.best_dev_tool %}
+      <div class="field">
+        <p><strong>Best Developer Tool score</strong> (1 = poor, 3 = excellent)</p>
+        {% if prev.best_dev_tool %}
+        <label for="dev-tool-prev">Score for Previous</label>
+        <select name="dev_tool_score_prev" id="dev-tool-prev">
+          <option value="">-- Select a score --</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+        {% endif %}
+        {% if next.best_dev_tool %}
+        <label for="dev-tool-next">Score for Current</label>
+        <select name="dev_tool_score_next" id="dev-tool-next">
+          <option value="">-- Select a score --</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <input type="submit" name="action" value="Submit" id="vote-submit" class="button-full button-gap">
       <input type="hidden" name="prev_id" value="{{ prev.id }}">
       <input type="hidden" name="next_id" value="{{ next.id }}">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      {% if request.args.get('secret') %}
+      <input type="hidden" name="secret" value="{{ request.args.get('secret') }}">
+      {% endif %}
     </form>
 
     <script src="{{ url_for('static', filename='js/smart-button-toggle.js') }}"></script>

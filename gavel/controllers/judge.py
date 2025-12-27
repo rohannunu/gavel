@@ -20,7 +20,7 @@ def requires_open(redirect_to):
         @wraps(f)
         def decorated(*args, **kwargs):
             if Setting.value_of(SETTING_CLOSED) == SETTING_TRUE:
-                return redirect(url_for(redirect_to))
+                return _redirect_with_secret(redirect_to)
             else:
                 return f(*args, **kwargs)
         return decorated
@@ -32,7 +32,7 @@ def requires_active_annotator(redirect_to):
         def decorated(*args, **kwargs):
             annotator = get_current_annotator()
             if annotator is None or not annotator.active:
-                return redirect(url_for(redirect_to))
+                return _redirect_with_secret(redirect_to)
             else:
                 return f(*args, **kwargs)
         return decorated
@@ -59,7 +59,7 @@ def index():
                 content=utils.render_markdown(settings.DISABLED_MESSAGE)
             )
         if not annotator.read_welcome:
-            return redirect(url_for('welcome'))
+            return _redirect_with_secret('welcome')
         maybe_init_annotator()
         if annotator.next is None:
             return render_template(
@@ -76,27 +76,36 @@ def index():
 @requires_active_annotator(redirect_to='index')
 def vote():
     def tx():
-        annotator = get_current_annotator()
-        if annotator.prev.id == int(request.form['prev_id']) and annotator.next.id == int(request.form['next_id']):
-            if request.form['action'] == 'Skip':
-                annotator.ignore.append(annotator.next)
-            else:
-                # ignore things that were deactivated in the middle of judging
-                if annotator.prev.active and annotator.next.active:
-                    if request.form['action'] == 'Previous':
-                        perform_vote(annotator, next_won=False)
-                        decision = Decision(annotator, winner=annotator.prev, loser=annotator.next)
-                    elif request.form['action'] == 'Current':
-                        perform_vote(annotator, next_won=True)
-                        decision = Decision(annotator, winner=annotator.next, loser=annotator.prev)
-                    db.session.add(decision)
+            annotator = get_current_annotator()
+            if annotator.prev.id == int(request.form['prev_id']) and annotator.next.id == int(request.form['next_id']):
+                if request.form['action'] == 'Skip':
+                    annotator.ignore.append(annotator.next)
+                else:
+                    # ignore things that were deactivated in the middle of judging
+                    if annotator.prev.active and annotator.next.active:
+                        if request.form['action'] == 'Previous':
+                            perform_vote(annotator, next_won=False)
+                            decision = Decision(annotator, winner=annotator.prev, loser=annotator.next)
+                        elif request.form['action'] == 'Current':
+                            perform_vote(annotator, next_won=True)
+                            decision = Decision(annotator, winner=annotator.next, loser=annotator.prev)
+                        db.session.add(decision)
+                    _maybe_save_dev_tool_score(annotator, annotator.prev, request.form.get('dev_tool_score_prev'))
+                    _maybe_save_dev_tool_score(annotator, annotator.next, request.form.get('dev_tool_score_next'))
                 annotator.next.viewed.append(annotator) # counted as viewed even if deactivated
                 annotator.prev = annotator.next
                 annotator.ignore.append(annotator.prev)
             annotator.update_next(choose_next(annotator))
+            remaining = preferred_items(annotator)
+            app.logger.info(
+                "Eligible items remaining for annotator %s (path=%s): %s",
+                annotator.id,
+                annotator.path_preference or 'any',
+                [i.id for i in remaining]
+            )
             db.session.commit()
     with_retries(tx)
-    return redirect(url_for('index'))
+    return _redirect_with_secret('index')
 
 @app.route('/begin', methods=['POST'])
 @requires_open(redirect_to='index')
@@ -107,29 +116,34 @@ def begin():
         if annotator.next.id == int(request.form['item_id']):
             annotator.ignore.append(annotator.next)
             if request.form['action'] == 'Continue':
+                _maybe_save_dev_tool_score(annotator, annotator.next, request.form.get('dev_tool_score'))
                 annotator.next.viewed.append(annotator)
                 annotator.prev = annotator.next
-                annotator.update_next(choose_next(annotator))
-            elif request.form['action'] == 'Skip':
-                annotator.next = None # will be reset in index
-            db.session.commit()
+            annotator.update_next(choose_next(annotator))
+        elif request.form['action'] == 'Skip':
+            annotator.next = None # will be reset in index
+        db.session.commit()
     with_retries(tx)
-    return redirect(url_for('index'))
+    return _redirect_with_secret('index')
 
 @app.route('/logout')
 def logout():
     session.pop(ANNOTATOR_ID, None)
-    return redirect(url_for('index'))
+    return _redirect_with_secret('index')
 
 @app.route('/login/<secret>/')
 def login(secret):
     annotator = Annotator.by_secret(secret)
-    if annotator is None:
-        session.pop(ANNOTATOR_ID, None)
-        session.modified = True
+    if settings.STATELESS_LOGINS:
+        # stateless mode: keep the secret in the URL; do not modify the shared session
+        return _redirect_with_secret('index', secret=secret)
     else:
-        session[ANNOTATOR_ID] = annotator.id
-    return redirect(url_for('index'))
+        if annotator is None:
+            session.pop(ANNOTATOR_ID, None)
+            session.modified = True
+        else:
+            session[ANNOTATOR_ID] = annotator.id
+        return redirect(url_for('index'))
 
 @app.route('/welcome/')
 @requires_open(redirect_to='index')
@@ -150,10 +164,26 @@ def welcome_done():
             annotator.read_welcome = True
         db.session.commit()
     with_retries(tx)
-    return redirect(url_for('index'))
+    return _redirect_with_secret('index')
 
 def get_current_annotator():
+    if settings.STATELESS_LOGINS:
+        secret = request.args.get('secret') or request.form.get('secret')
+        if secret:
+            return Annotator.by_secret(secret)
     return Annotator.by_id(session.get(ANNOTATOR_ID, None))
+
+
+def _redirect_with_secret(endpoint, **kwargs):
+    '''
+    Preserve the judge secret in the query string when stateless logins are
+    enabled, so multiple judges can be open in different tabs.
+    '''
+    if settings.STATELESS_LOGINS:
+        secret = kwargs.get('secret') or request.args.get('secret') or request.form.get('secret')
+        if secret:
+            kwargs['secret'] = secret
+    return redirect(url_for(endpoint, **kwargs))
 
 def preferred_items(annotator):
     '''
@@ -165,12 +195,13 @@ def preferred_items(annotator):
     items = []
     ignored_ids = {i.id for i in annotator.ignore}
 
+    base_query = Item.query.filter(Item.active == True)
+    if annotator.path_preference:
+        base_query = base_query.filter(Item.path == annotator.path_preference)
     if ignored_ids:
-        available_items = Item.query.filter(
-            (Item.active == True) & (~Item.id.in_(ignored_ids))
-        ).all()
+        available_items = base_query.filter(~Item.id.in_(ignored_ids)).all()
     else:
-        available_items = Item.query.filter(Item.active == True).all()
+        available_items = base_query.all()
 
     prioritized_items = [i for i in available_items if i.prioritized]
 
@@ -237,3 +268,22 @@ def perform_vote(annotator, next_won):
     winner.sigma_sq = u_winner_sigma_sq
     loser.mu = u_loser_mu
     loser.sigma_sq = u_loser_sigma_sq
+
+
+def _maybe_save_dev_tool_score(annotator, item, raw_score):
+    if not item.best_dev_tool:
+        return
+    if raw_score is None or raw_score == '':
+        return
+    try:
+        score = int(raw_score)
+    except ValueError:
+        return
+    if score < 1 or score > 3:
+        return
+    existing = DevToolScore.query.filter_by(annotator_id=annotator.id, item_id=item.id).one_or_none()
+    if existing:
+        existing.score = score
+        existing.time = datetime.utcnow()
+    else:
+        db.session.add(DevToolScore(annotator, item, score))

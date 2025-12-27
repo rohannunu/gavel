@@ -87,6 +87,13 @@ min_views: null
 # having a timeout can be useful in situations where judges disappear.
 timeout: null
 
+# can also be specified as the 'STATELESS_LOGINS' environment variable
+# defaults to 'False'
+#
+# when true, the judge secret must be kept in the query string, allowing
+# multiple judges to be open in different tabs without sharing a session.
+stateless_logins: null
+
 # can't be specified via environment variable
 # defaults to gavel.constants.DEFAULT_WELCOME_MESSAGE
 #

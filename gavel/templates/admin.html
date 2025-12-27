@@ -26,6 +26,7 @@
         <tr>
           <th data-sort-method="number">Id</th>
           <th data-sort-method="caseInsensitiveSort">Name</th>
+          <th data-sort-method="caseInsensitiveSort">Path</th>
           <th data-sort-method="caseInsensitiveSort">Location</th>
           <th data-sort-method="caseInsensitiveSort">Description</th>
           <th class="sort-default" data-sort-method="number" data-sort-order="desc">Mu</th>
@@ -33,6 +34,7 @@
           <th data-sort-method="number">Votes</th>
           <th data-sort-method="number">Seen</th>
           <th data-sort-method="number" data-sort-order="desc">Skipped</th>
+          <th data-sort-method="caseInsensitiveSort">Best Dev Tool</th>
           <th data-sort-method="caseInsensitiveSort" data-sort-order="desc">Prioritize</th>
           <th data-sort-method="caseInsensitiveSort">Active</th>
           <th class="no-sort">Delete</th>
@@ -43,6 +45,17 @@
         <tr class="{{ 'disabled' if not item.active else 'prioritized' if item.prioritized else '' }}">
           <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.id }}</a></td>
           <td>{{ item.name }}</td>
+          <td class="compact" data-sort="{{ item.path }}">
+            <form action="{{ url_for('item_patch') }}" method="post">
+              <select name="path">
+                <option value="general" {{ 'selected' if item.path == 'general' else '' }}>General</option>
+                <option value="pro" {{ 'selected' if item.path == 'pro' else '' }}>Pro</option>
+              </select>
+              <input type="submit" name="action" value="Update" class="neutral">
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            </form>
+          </td>
           <td>{{ item.location }}</td>
           <td class="preserve-formatting">{{ item.description }}</td>
           <td>{{ item.mu | round(4) }}</td>
@@ -50,6 +63,14 @@
           <td>{{ item_counts.get(item.id, 0) }}</td>
           <td>{{ item.viewed | length }}</td>
           <td>{{ skipped.get(item.id, 0) }}</td>
+          <td class="compact" data-sort="{{ item.best_dev_tool }}">
+            <form action="{{ url_for('item_patch') }}" method="post">
+              <input type="hidden" name="best_dev_tool" value="{{ 'false' if item.best_dev_tool else 'true' }}">
+              <input type="submit" name="action" value="{{ 'Remove' if item.best_dev_tool else 'Add' }}" class="{{ 'negative' if item.best_dev_tool else 'positive' }}">
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            </form>
+          </td>
           <td class="compact" data-sort="{{ item.prioritized }}">
             <form action="{{ url_for('item') }}" method="post">
               <input type="submit" name="action" value="{{ 'Prioritize' if not item.prioritized else 'Cancel' }}" class="{{ 'positive' if not item.prioritized else 'negative' }}">
@@ -83,6 +104,117 @@
 
 <div class="item">
   <div class="banner">
+    <h2>Path Rankings</h2>
+  </div>
+  <div class="info">
+    <div class="grid two-col">
+      <div>
+        <h3>General Path</h3>
+        <table id="path-general">
+          <thead>
+            <tr>
+              <th class="sort-default" data-sort-method="number">Rank</th>
+              <th data-sort-method="number" data-sort-order="desc">Mu</th>
+              <th data-sort-method="caseInsensitiveSort">Name</th>
+              <th data-sort-method="caseInsensitiveSort">Location</th>
+              <th data-sort-method="caseInsensitiveSort">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in general_ranked %}
+            <tr class="{{ 'disabled' if not item.active else '' }}">
+              <td>{{ loop.index }}</td>
+              <td>{{ item.mu | round(4) }}</td>
+              <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
+              <td>{{ item.location }}</td>
+              <td class="preserve-formatting">{{ item.description }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5">No General Path projects.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Pro Path</h3>
+        <table id="path-pro">
+          <thead>
+            <tr>
+              <th class="sort-default" data-sort-method="number">Rank</th>
+              <th data-sort-method="number" data-sort-order="desc">Mu</th>
+              <th data-sort-method="caseInsensitiveSort">Name</th>
+              <th data-sort-method="caseInsensitiveSort">Location</th>
+              <th data-sort-method="caseInsensitiveSort">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pro_ranked %}
+            <tr class="{{ 'disabled' if not item.active else '' }}">
+              <td>{{ loop.index }}</td>
+              <td>{{ item.mu | round(4) }}</td>
+              <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
+              <td>{{ item.location }}</td>
+              <td class="preserve-formatting">{{ item.description }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5">No Pro Path projects.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="item">
+  <div class="banner">
+    <h2>Best Developer Tool</h2>
+  </div>
+  <div class="info">
+    <table id="devtool">
+      <thead>
+        <tr>
+          <th class="sort-default" data-sort-method="number" data-sort-order="desc">Avg Score</th>
+          <th data-sort-method="number">Scores</th>
+          <th data-sort-method="caseInsensitiveSort">Path</th>
+          <th data-sort-method="number">Mu</th>
+          <th data-sort-method="caseInsensitiveSort">Name</th>
+          <th data-sort-method="caseInsensitiveSort">Location</th>
+          <th data-sort-method="caseInsensitiveSort">Description</th>
+          <th data-sort-method="caseInsensitiveSort">Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item, avg_score, score_count in dev_tool_scores %}
+        <tr class="{{ 'disabled' if not item.active else '' }}">
+          <td>{{ (avg_score or 0) | round(3) if avg_score is not none else '' }}</td>
+          <td>{{ score_count }}</td>
+          <td>{{ item.path }}</td>
+          <td>{{ item.mu | round(4) }}</td>
+          <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
+          <td>{{ item.location }}</td>
+          <td class="preserve-formatting">{{ item.description }}</td>
+          <td>{{ item.active }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8">No Best Developer Tool projects yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="api-link">
+    <a href="{{ url_for('dev_tool_dump') }}">Download Best Developer Tool CSV</a>
+  </div>
+</div>
+
+<div class="item">
+  <div class="banner">
     <h2>Judges</h2>
   </div>
   <div class="info">
@@ -93,6 +225,7 @@
           <th data-sort-method="caseInsensitiveSort">Name</th>
           <th data-sort-method="caseInsensitiveSort">Email</th>
           <th data-sort-method="caseInsensitiveSort">Description</th>
+          <th data-sort-method="caseInsensitiveSort">Path</th>
           <th data-sort-method="number">Votes</th>
           <th data-sort-method="number">Next (Id)</th>
           <th data-sort-method="number">Previous (Id)</th>
@@ -109,6 +242,18 @@
           <td>{{ annotator.name }}</td>
           <td>{{ annotator.email }}</td>
           <td>{{ annotator.description }}</td>
+          <td class="compact" data-sort="{{ annotator.path_preference or '' }}">
+            <form action="{{ url_for('annotator') }}" method="post">
+              <select name="path_preference">
+                <option value="" {{ 'selected' if not annotator.path_preference else '' }}>Any</option>
+                <option value="general" {{ 'selected' if annotator.path_preference == 'general' else '' }}>General</option>
+                <option value="pro" {{ 'selected' if annotator.path_preference == 'pro' else '' }}>Pro</option>
+              </select>
+              <input type="submit" name="action" value="Patch" class="neutral">
+              <input type="hidden" name="annotator_id" value="{{ annotator.id }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            </form>
+          </td>
           <td>{{ counts.get(annotator.id, 0) }}</td>
           <td data-sort="{{ annotator.next_id or -1 }}">{{ annotator.next_id }}</td>
           <td data-sort="{{ annotator.prev_id or -1 }}">{{ annotator.prev_id }}</td>
@@ -149,12 +294,25 @@
     <h2>Add Projects</h2>
   </div>
   <div class="info">
-    <p>Add name, location, description (CSV format)</p>
+    <p>Add name, location, description (CSV format). Optionally include path (general/pro) and best_dev_tool (true/false) as 4th/5th columns.</p>
     <textarea name="data" form="item_form"></textarea>
     <form action="{{ url_for('item') }}" method="post" id="item_form" enctype="multipart/form-data">
       <div class="upload-container">
         <span class="field">Or upload a file here:</span>
         <input type="file" name="file" accept=".csv,.xls,.xlsx">
+      </div>
+      <div class="upload-container">
+        <span class="field">Default Path:</span>
+        <select name="default_path">
+          <option value="general">General</option>
+          <option value="pro">Pro</option>
+        </select>
+      </div>
+      <div class="upload-container">
+        <label>
+          <input type="checkbox" name="default_best_dev_tool">
+          Mark uploaded projects as Best Developer Tool by default
+        </label>
       </div>
       <input type="submit" name="action" value="Submit" class="button-full positive">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
@@ -166,7 +324,7 @@
     <h2>Add Judges</h2>
   </div>
   <div class="info">
-    <p>Add name, email, description (CSV format)</p>
+    <p>Add name, email, description, general/pro (CSV format)</p>
     <textarea name="data" form="annotator_form"></textarea>
     <form action="{{ url_for('annotator') }}" method="post" id="annotator_form" enctype="multipart/form-data">
       <div class="upload-container">
@@ -216,6 +374,9 @@
 var tables = [
   document.getElementById('items'),
   document.getElementById('annotators'),
+  document.getElementById('devtool'),
+  document.getElementById('path-general'),
+  document.getElementById('path-pro'),
 ];
 for (var i = 0; i < tables.length; i++) {
   new Tablesort(tables[i]);

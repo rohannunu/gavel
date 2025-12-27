@@ -15,16 +15,21 @@ class Item(db.Model):
     active = db.Column(db.Boolean, default=True, nullable=False)
     viewed = db.relationship('Annotator', secondary=view_table)
     prioritized = db.Column(db.Boolean, default=False, nullable=False)
+    path = db.Column(db.Enum('general', 'pro', name='item_path'), default='general', nullable=False)
+    best_dev_tool = db.Column(db.Boolean, default=False, nullable=False)
+    dev_tool_scores = db.relationship('DevToolScore', back_populates='item', cascade='all, delete-orphan')
 
     mu = db.Column(db.Float)
     sigma_sq = db.Column(db.Float)
 
-    def __init__(self, name, location, description):
+    def __init__(self, name, location, description, path='general', best_dev_tool=False):
         self.name = name
         self.location = location
         self.description = description
         self.mu = crowd_bt.MU_PRIOR
         self.sigma_sq = crowd_bt.SIGMA_SQ_PRIOR
+        self.path = (path or 'general').lower()
+        self.best_dev_tool = bool(best_dev_tool)
 
     @classmethod
     def by_id(cls, uid):

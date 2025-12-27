@@ -24,6 +24,21 @@
         <td>{{ annotator.description }}</td>
       </tr>
       <tr>
+        <th>Path</th>
+        <td>
+          <form action="{{ url_for('annotator') }}" method="post">
+            <select name="path_preference">
+              <option value="" {{ 'selected' if not annotator.path_preference else '' }}>Any</option>
+              <option value="general" {{ 'selected' if annotator.path_preference == 'general' else '' }}>General</option>
+              <option value="pro" {{ 'selected' if annotator.path_preference == 'pro' else '' }}>Pro</option>
+            </select>
+            <input type="submit" name="action" value="Patch" class="neutral">
+            <input type="hidden" name="annotator_id" value="{{ annotator.id }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          </form>
+        </td>
+      </tr>
+      <tr>
         <th>Login URL</th>
         <td><a href="{{ login_link }}">{{ login_link }}</a></td>
       </tr>

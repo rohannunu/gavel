@@ -2,4 +2,8 @@
   <h2>{{ item.name }}</h2>
   <p class="preserve-formatting">{{ item.description }}</p>
   <p><strong>Location: </strong>{{ item.location }}</p>
+  <p><strong>Path: </strong>{{ item.path | capitalize }}</p>
+  {% if item.best_dev_tool %}
+  <p><strong>Track: </strong>Best Developer Tool</p>
+  {% endif %}
 </div>
