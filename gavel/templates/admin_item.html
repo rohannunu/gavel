@@ -58,17 +58,19 @@
           </form>
         </td>
       </tr>
+      {% for prize_field, prize_label in [('prize_ui_ux', 'Best UI/UX Design'), ('prize_social_impact', 'Best Social Impact'), ('prize_creative', 'Most Creative'), ('prize_useless', 'Most Useless')] %}
       <tr>
-        <th>Best Developer Tool</th>
+        <th>{{ prize_label }}</th>
         <td>
           <form action="{{ url_for('item_patch') }}" method="post">
-            <input type="hidden" name="best_dev_tool" value="{{ 'false' if item.best_dev_tool else 'true' }}">
-            <input type="submit" name="action" value="{{ 'Remove from track' if item.best_dev_tool else 'Add to track' }}" class="{{ 'negative' if item.best_dev_tool else 'positive' }}">
+            <input type="hidden" name="{{ prize_field }}" value="{{ 'false' if item|attr(prize_field) else 'true' }}">
+            <input type="submit" name="action" value="{{ 'Remove' if item|attr(prize_field) else 'Add' }}" class="{{ 'negative' if item|attr(prize_field) else 'positive' }}">
             <input type="hidden" name="item_id" value="{{ item.id }}">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           </form>
         </td>
       </tr>
+      {% endfor %}
       <tr>
         <th>Mu</th>
         <td>{{ item.mu }}</td>

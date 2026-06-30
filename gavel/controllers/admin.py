@@ -4,7 +4,6 @@ from gavel.constants import *
 import gavel.settings as settings
 import gavel.utils as utils
 import gavel.stats as stats
-from sqlalchemy.sql import func
 from flask import (
     redirect,
     render_template,
@@ -16,6 +15,8 @@ import xlrd
 
 ALLOWED_EXTENSIONS = set(['csv', 'xlsx', 'xls'])
 ITEM_PATHS = ('general', 'pro')
+PRIZE_JUDGE_TYPES = ('ui_ux', 'social_impact', 'creative', 'useless')
+VALID_JUDGE_PREFERENCES = ITEM_PATHS + PRIZE_JUDGE_TYPES
 
 @app.route('/admin/')
 @utils.requires_auth
@@ -43,15 +44,10 @@ def admin():
                 skipped[i.id] = skipped.get(i.id, 0) + 1
     # settings
     setting_closed = Setting.value_of(SETTING_CLOSED) == SETTING_TRUE
-    dev_tool_scores = db.session.query(
-        Item,
-        func.avg(DevToolScore.score).label('avg_score'),
-        func.count(DevToolScore.id).label('score_count')
-    ).outerjoin(DevToolScore).filter(
-        Item.best_dev_tool == True
-    ).group_by(Item.id).order_by(
-        desc('avg_score')
-    ).all()
+    prize_ui_ux_items = Item.query.filter_by(prize_ui_ux=True, active=True).order_by(desc(Item.mu)).all()
+    prize_social_impact_items = Item.query.filter_by(prize_social_impact=True, active=True).order_by(desc(Item.mu)).all()
+    prize_creative_items = Item.query.filter_by(prize_creative=True, active=True).order_by(desc(Item.mu)).all()
+    prize_useless_items = Item.query.filter_by(prize_useless=True, active=True).order_by(desc(Item.mu)).all()
     return render_template(
         'admin.html',
         annotators=annotators,
@@ -63,7 +59,10 @@ def admin():
         pro_ranked=pro_ranked,
         votes=len(decisions),
         setting_closed=setting_closed,
-        dev_tool_scores=dev_tool_scores,
+        prize_ui_ux_items=prize_ui_ux_items,
+        prize_social_impact_items=prize_social_impact_items,
+        prize_creative_items=prize_creative_items,
+        prize_useless_items=prize_useless_items,
     )
 
 @app.route('/admin/item', methods=['POST'])
@@ -76,7 +75,8 @@ def item():
             default_path = (request.form.get('default_path') or 'general').lower()
             if default_path not in ITEM_PATHS:
                 return utils.user_error('Default path "%s" is invalid (expected "general" or "pro")' % default_path)
-            default_best_dev_tool = _parse_bool(request.form.get('default_best_dev_tool'), False)
+
+            VALID_PRIZE_KEYS = {'ui_ux', 'social_impact', 'creative', 'useless'}
 
             def normalize_row(index, row):
                 if len(row) < 3 or len(row) > 5:
@@ -85,8 +85,13 @@ def item():
                 path_value = str(path_value).strip().lower() if path_value is not None else default_path
                 if path_value not in ITEM_PATHS:
                     raise ValueError('row %d has invalid path "%s" (expected "general" or "pro")' % (index + 1, path_value))
-                best_dev_tool_value = _parse_bool(row[4], default_best_dev_tool) if len(row) >= 5 else default_best_dev_tool
-                return (row[0], row[1], row[2], path_value, best_dev_tool_value)
+                prizes = set()
+                if len(row) >= 5 and row[4]:
+                    for key in str(row[4]).split(';'):
+                        key = key.strip().lower()
+                        if key in VALID_PRIZE_KEYS:
+                            prizes.add(key)
+                return (row[0], row[1], row[2], path_value, prizes)
 
             try:
                 normalized = [normalize_row(index, row) for index, row in enumerate(data)]
@@ -94,7 +99,7 @@ def item():
                 return utils.user_error('Bad data: %s' % str(e))
             def tx():
                 for row in normalized:
-                    _item = Item(row[0], row[1], row[2], path=row[3], best_dev_tool=row[4])
+                    _item = Item(row[0], row[1], row[2], path=row[3], prizes=row[4])
                     db.session.add(_item)
                 db.session.commit()
             with_retries(tx)
@@ -194,8 +199,9 @@ def item_patch():
             if path_value not in ITEM_PATHS:
                 return utils.user_error('Path "%s" is invalid (expected "general" or "pro")' % path_value)
             item.path = path_value
-        if 'best_dev_tool' in request.form:
-            item.best_dev_tool = _parse_bool(request.form['best_dev_tool'], item.best_dev_tool)
+        for field in ('prize_ui_ux', 'prize_social_impact', 'prize_creative', 'prize_useless'):
+            if field in request.form:
+                setattr(item, field, _parse_bool(request.form[field], getattr(item, field)))
         db.session.commit()
     with_retries(tx)
     return redirect(request.referrer or url_for('item_detail', item_id=item.id))
@@ -217,8 +223,8 @@ def annotator():
                     path_pref = None
                     if len(row) == 4 and row[3]:
                         normalized_path = row[3].strip().lower()
-                        if normalized_path not in ITEM_PATHS:
-                            return utils.user_error('Bad data: row %d has invalid path "%s" (expected "general" or "pro")' % (index + 1, row[3]))
+                        if normalized_path not in VALID_JUDGE_PREFERENCES:
+                            return utils.user_error('Bad data: row %d has invalid preference "%s" (expected one of: %s)' % (index + 1, row[3], ', '.join(VALID_JUDGE_PREFERENCES)))
                         path_pref = normalized_path
                     annotator = Annotator(row[0], row[1], row[2], path_preference=path_pref)
                     added.append(annotator)
@@ -245,8 +251,8 @@ def annotator():
     elif action == 'Patch':
         annotator_id = request.form['annotator_id']
         path_pref = request.form.get('path_preference')
-        if path_pref and path_pref not in ITEM_PATHS:
-            return utils.user_error('Path "%s" is invalid (expected "general" or "pro")' % path_pref)
+        if path_pref and path_pref not in VALID_JUDGE_PREFERENCES:
+            return utils.user_error('Preference "%s" is invalid (expected one of: %s)' % (path_pref, ', '.join(VALID_JUDGE_PREFERENCES)))
         def tx():
             annotator = Annotator.by_id(annotator_id)
             if not annotator:

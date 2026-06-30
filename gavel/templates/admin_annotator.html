@@ -31,6 +31,10 @@
               <option value="" {{ 'selected' if not annotator.path_preference else '' }}>Any</option>
               <option value="general" {{ 'selected' if annotator.path_preference == 'general' else '' }}>General</option>
               <option value="pro" {{ 'selected' if annotator.path_preference == 'pro' else '' }}>Pro</option>
+              <option value="ui_ux" {{ 'selected' if annotator.path_preference == 'ui_ux' else '' }}>Best UI/UX Design</option>
+              <option value="social_impact" {{ 'selected' if annotator.path_preference == 'social_impact' else '' }}>Best Social Impact</option>
+              <option value="creative" {{ 'selected' if annotator.path_preference == 'creative' else '' }}>Most Creative</option>
+              <option value="useless" {{ 'selected' if annotator.path_preference == 'useless' else '' }}>Most Useless</option>
             </select>
             <input type="submit" name="action" value="Patch" class="neutral">
             <input type="hidden" name="annotator_id" value="{{ annotator.id }}">

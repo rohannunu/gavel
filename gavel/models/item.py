@@ -16,20 +16,36 @@ class Item(db.Model):
     viewed = db.relationship('Annotator', secondary=view_table)
     prioritized = db.Column(db.Boolean, default=False, nullable=False)
     path = db.Column(db.Enum('general', 'pro', name='item_path'), default='general', nullable=False)
-    best_dev_tool = db.Column(db.Boolean, default=False, nullable=False)
-    dev_tool_scores = db.relationship('DevToolScore', back_populates='item', cascade='all, delete-orphan')
+    prize_ui_ux = db.Column(db.Boolean, default=False, nullable=False)
+    prize_social_impact = db.Column(db.Boolean, default=False, nullable=False)
+    prize_creative = db.Column(db.Boolean, default=False, nullable=False)
+    prize_useless = db.Column(db.Boolean, default=False, nullable=False)
 
     mu = db.Column(db.Float)
     sigma_sq = db.Column(db.Float)
 
-    def __init__(self, name, location, description, path='general', best_dev_tool=False):
+    @property
+    def prizes(self):
+        mapping = {
+            'Best UI/UX Design': self.prize_ui_ux,
+            'Best Social Impact': self.prize_social_impact,
+            'Most Creative': self.prize_creative,
+            'Most Useless': self.prize_useless,
+        }
+        return [name for name, eligible in mapping.items() if eligible]
+
+    def __init__(self, name, location, description, path='general', prizes=None):
         self.name = name
         self.location = location
         self.description = description
         self.mu = crowd_bt.MU_PRIOR
         self.sigma_sq = crowd_bt.SIGMA_SQ_PRIOR
         self.path = (path or 'general').lower()
-        self.best_dev_tool = bool(best_dev_tool)
+        if prizes:
+            self.prize_ui_ux = 'ui_ux' in prizes
+            self.prize_social_impact = 'social_impact' in prizes
+            self.prize_creative = 'creative' in prizes
+            self.prize_useless = 'useless' in prizes
 
     @classmethod
     def by_id(cls, uid):

@@ -2,7 +2,6 @@ from gavel import app
 from gavel.models import *
 import gavel.utils as utils
 from flask import Response, request
-from sqlalchemy.sql import func
 
 @app.route('/api/items.csv')
 @app.route('/api/projects.csv')
@@ -13,12 +12,15 @@ def item_dump():
     if path_filter:
         query = query.filter(Item.path == path_filter.lower())
     items = query.order_by(desc(Item.mu)).all()
-    data = [['Mu', 'Sigma Squared', 'Path', 'Best Developer Tool', 'Name', 'Location', 'Description', 'Active']]
+    data = [['Mu', 'Sigma Squared', 'Path', 'Prize UI/UX', 'Prize Social Impact', 'Prize Creative', 'Prize Useless', 'Name', 'Location', 'Description', 'Active']]
     data += [[
         str(item.mu),
         str(item.sigma_sq),
         item.path,
-        item.best_dev_tool,
+        item.prize_ui_ux,
+        item.prize_social_impact,
+        item.prize_creative,
+        item.prize_useless,
         item.name,
         item.location,
         item.description,
@@ -27,29 +29,32 @@ def item_dump():
     return Response(utils.data_to_csv_string(data), mimetype='text/csv')
 
 
-@app.route('/api/devtool.csv')
+@app.route('/api/prizes.csv')
 @utils.requires_auth
-def dev_tool_dump():
+def prizes_dump():
     path_filter = request.args.get('path')
-    query = db.session.query(
-        Item,
-        func.avg(DevToolScore.score).label('avg_score'),
-        func.count(DevToolScore.id).label('score_count')
-    ).outerjoin(DevToolScore).filter(Item.best_dev_tool == True)
+    query = Item.query.filter(
+        (Item.prize_ui_ux == True) |
+        (Item.prize_social_impact == True) |
+        (Item.prize_creative == True) |
+        (Item.prize_useless == True)
+    )
     if path_filter:
         query = query.filter(Item.path == path_filter.lower())
-    results = query.group_by(Item.id).order_by(desc('avg_score')).all()
-    data = [['Avg Score', 'Score Count', 'Path', 'Mu', 'Name', 'Location', 'Description', 'Active']]
+    items = query.order_by(desc(Item.mu)).all()
+    data = [['Mu', 'Path', 'Prize UI/UX', 'Prize Social Impact', 'Prize Creative', 'Prize Useless', 'Name', 'Location', 'Description', 'Active']]
     data += [[
-        str(avg_score) if avg_score is not None else '',
-        str(score_count),
-        item.path,
         str(item.mu),
+        item.path,
+        item.prize_ui_ux,
+        item.prize_social_impact,
+        item.prize_creative,
+        item.prize_useless,
         item.name,
         item.location,
         item.description,
         item.active
-    ] for (item, avg_score, score_count) in results]
+    ] for item in items]
     return Response(utils.data_to_csv_string(data), mimetype='text/csv')
 
 @app.route('/api/annotators.csv')

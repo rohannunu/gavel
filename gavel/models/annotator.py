@@ -24,8 +24,7 @@ class Annotator(db.Model):
     prev = db.relationship('Item', foreign_keys=[prev_id], uselist=False)
     ignore = db.relationship('Item', secondary=ignore_table)
 
-    dev_tool_scores = db.relationship('DevToolScore', back_populates='annotator', cascade='all, delete-orphan')
-    path_preference = db.Column(db.Enum('general', 'pro', name='annotator_path'), nullable=True)
+    path_preference = db.Column(db.Text, nullable=True)
 
     alpha = db.Column(db.Float)
     beta = db.Column(db.Float)

@@ -90,8 +90,6 @@ def vote():
                             perform_vote(annotator, next_won=True)
                             decision = Decision(annotator, winner=annotator.next, loser=annotator.prev)
                         db.session.add(decision)
-                    _maybe_save_dev_tool_score(annotator, annotator.prev, request.form.get('dev_tool_score_prev'))
-                    _maybe_save_dev_tool_score(annotator, annotator.next, request.form.get('dev_tool_score_next'))
                 annotator.next.viewed.append(annotator) # counted as viewed even if deactivated
                 annotator.prev = annotator.next
                 annotator.ignore.append(annotator.prev)
@@ -116,7 +114,6 @@ def begin():
         if annotator.next.id == int(request.form['item_id']):
             annotator.ignore.append(annotator.next)
             if request.form['action'] == 'Continue':
-                _maybe_save_dev_tool_score(annotator, annotator.next, request.form.get('dev_tool_score'))
                 annotator.next.viewed.append(annotator)
                 annotator.prev = annotator.next
             annotator.update_next(choose_next(annotator))
@@ -185,6 +182,13 @@ def _redirect_with_secret(endpoint, **kwargs):
             kwargs['secret'] = secret
     return redirect(url_for(endpoint, **kwargs))
 
+PRIZE_PREFERENCE_FIELDS = {
+    'ui_ux': 'prize_ui_ux',
+    'social_impact': 'prize_social_impact',
+    'creative': 'prize_creative',
+    'useless': 'prize_useless',
+}
+
 def preferred_items(annotator):
     '''
     Return a list of preferred items for the given annotator to look at next.
@@ -196,8 +200,13 @@ def preferred_items(annotator):
     ignored_ids = {i.id for i in annotator.ignore}
 
     base_query = Item.query.filter(Item.active == True)
-    if annotator.path_preference:
-        base_query = base_query.filter(Item.path == annotator.path_preference)
+    pref = annotator.path_preference
+    if pref in ('general', 'pro'):
+        base_query = base_query.filter(Item.path == pref)
+    elif pref in PRIZE_PREFERENCE_FIELDS:
+        base_query = base_query.filter(
+            getattr(Item, PRIZE_PREFERENCE_FIELDS[pref]) == True
+        )
     if ignored_ids:
         available_items = base_query.filter(~Item.id.in_(ignored_ids)).all()
     else:
@@ -268,22 +277,3 @@ def perform_vote(annotator, next_won):
     winner.sigma_sq = u_winner_sigma_sq
     loser.mu = u_loser_mu
     loser.sigma_sq = u_loser_sigma_sq
-
-
-def _maybe_save_dev_tool_score(annotator, item, raw_score):
-    if not item.best_dev_tool:
-        return
-    if raw_score is None or raw_score == '':
-        return
-    try:
-        score = int(raw_score)
-    except ValueError:
-        return
-    if score < 1 or score > 3:
-        return
-    existing = DevToolScore.query.filter_by(annotator_id=annotator.id, item_id=item.id).one_or_none()
-    if existing:
-        existing.score = score
-        existing.time = datetime.utcnow()
-    else:
-        db.session.add(DevToolScore(annotator, item, score))

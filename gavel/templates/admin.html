@@ -34,7 +34,7 @@
           <th data-sort-method="number">Votes</th>
           <th data-sort-method="number">Seen</th>
           <th data-sort-method="number" data-sort-order="desc">Skipped</th>
-          <th data-sort-method="caseInsensitiveSort">Best Dev Tool</th>
+          <th data-sort-method="caseInsensitiveSort">Prizes</th>
           <th data-sort-method="caseInsensitiveSort" data-sort-order="desc">Prioritize</th>
           <th data-sort-method="caseInsensitiveSort">Active</th>
           <th class="no-sort">Delete</th>
@@ -42,7 +42,7 @@
       </thead>
       <tbody>
         {% for item in items %}
-        <tr class="{{ 'disabled' if not item.active else 'prioritized' if item.prioritized else '' }}">
+        <tr class="{{ 'disabled' if not item.active else 'prioritized' if item.prioritized else '' }}{% if loop.index > 10 %} items-extra{% endif %}" {% if loop.index > 10 %}style="display:none"{% endif %}>
           <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.id }}</a></td>
           <td>{{ item.name }}</td>
           <td class="compact" data-sort="{{ item.path }}">
@@ -63,14 +63,7 @@
           <td>{{ item_counts.get(item.id, 0) }}</td>
           <td>{{ item.viewed | length }}</td>
           <td>{{ skipped.get(item.id, 0) }}</td>
-          <td class="compact" data-sort="{{ item.best_dev_tool }}">
-            <form action="{{ url_for('item_patch') }}" method="post">
-              <input type="hidden" name="best_dev_tool" value="{{ 'false' if item.best_dev_tool else 'true' }}">
-              <input type="submit" name="action" value="{{ 'Remove' if item.best_dev_tool else 'Add' }}" class="{{ 'negative' if item.best_dev_tool else 'positive' }}">
-              <input type="hidden" name="item_id" value="{{ item.id }}">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            </form>
-          </td>
+          <td>{{ item.prizes | join(', ') }}</td>
           <td class="compact" data-sort="{{ item.prioritized }}">
             <form action="{{ url_for('item') }}" method="post">
               <input type="submit" name="action" value="{{ 'Prioritize' if not item.prioritized else 'Cancel' }}" class="{{ 'positive' if not item.prioritized else 'negative' }}">
@@ -96,6 +89,7 @@
         {% endfor %}
       </tbody>
     </table>
+    <button class="see-more-btn neutral" id="items-see-more" style="margin-top:0.5em">See More</button>
   </div>
   <div class="api-link">
     <a href="{{ url_for('item_dump') }}">Download CSV</a>
@@ -122,7 +116,7 @@
           </thead>
           <tbody>
             {% for item in general_ranked %}
-            <tr class="{{ 'disabled' if not item.active else '' }}">
+            <tr class="{{ 'disabled' if not item.active else '' }}{% if loop.index > 10 %} ranked-extra ranked-extra-general{% endif %}" {% if loop.index > 10 %}style="display:none"{% endif %}>
               <td>{{ loop.index }}</td>
               <td>{{ item.mu | round(4) }}</td>
               <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
@@ -136,6 +130,9 @@
             {% endfor %}
           </tbody>
         </table>
+        {% if general_ranked | length > 10 %}
+        <button class="see-more-btn neutral" data-ranked="general" style="margin-top:0.5em">See More ({{ general_ranked | length - 10 }} more)</button>
+        {% endif %}
       </div>
       <div>
         <h3>Pro Path</h3>
@@ -151,7 +148,7 @@
           </thead>
           <tbody>
             {% for item in pro_ranked %}
-            <tr class="{{ 'disabled' if not item.active else '' }}">
+            <tr class="{{ 'disabled' if not item.active else '' }}{% if loop.index > 10 %} ranked-extra ranked-extra-pro{% endif %}" {% if loop.index > 10 %}style="display:none"{% endif %}>
               <td>{{ loop.index }}</td>
               <td>{{ item.mu | round(4) }}</td>
               <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
@@ -165,52 +162,59 @@
             {% endfor %}
           </tbody>
         </table>
+        {% if pro_ranked | length > 10 %}
+        <button class="see-more-btn neutral" data-ranked="pro" style="margin-top:0.5em">See More ({{ pro_ranked | length - 10 }} more)</button>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
 
+{% for prize_label, prize_items, prize_id in [
+  ('Best UI/UX Design', prize_ui_ux_items, 'prize-ui-ux'),
+  ('Best Social Impact', prize_social_impact_items, 'prize-social-impact'),
+  ('Most Creative', prize_creative_items, 'prize-creative'),
+  ('Most Useless', prize_useless_items, 'prize-useless')
+] %}
 <div class="item">
   <div class="banner">
-    <h2>Best Developer Tool</h2>
+    <h2>{{ prize_label }}</h2>
   </div>
   <div class="info">
-    <table id="devtool">
+    <table id="{{ prize_id }}">
       <thead>
         <tr>
-          <th class="sort-default" data-sort-method="number" data-sort-order="desc">Avg Score</th>
-          <th data-sort-method="number">Scores</th>
-          <th data-sort-method="caseInsensitiveSort">Path</th>
-          <th data-sort-method="number">Mu</th>
+          <th class="sort-default" data-sort-method="number">Rank</th>
+          <th data-sort-method="number" data-sort-order="desc">Mu</th>
           <th data-sort-method="caseInsensitiveSort">Name</th>
           <th data-sort-method="caseInsensitiveSort">Location</th>
           <th data-sort-method="caseInsensitiveSort">Description</th>
-          <th data-sort-method="caseInsensitiveSort">Active</th>
         </tr>
       </thead>
       <tbody>
-        {% for item, avg_score, score_count in dev_tool_scores %}
-        <tr class="{{ 'disabled' if not item.active else '' }}">
-          <td>{{ (avg_score or 0) | round(3) if avg_score is not none else '' }}</td>
-          <td>{{ score_count }}</td>
-          <td>{{ item.path }}</td>
+        {% for item in prize_items %}
+        <tr class="{{ 'disabled' if not item.active else '' }}{% if loop.index > 10 %} prize-extra prize-extra-{{ prize_id }}{% endif %}" {% if loop.index > 10 %}style="display:none"{% endif %}>
+          <td>{{ loop.index }}</td>
           <td>{{ item.mu | round(4) }}</td>
           <td><a href="{{ url_for('item_detail', item_id=item.id) }}" class="colored">{{ item.name }}</a></td>
           <td>{{ item.location }}</td>
           <td class="preserve-formatting">{{ item.description }}</td>
-          <td>{{ item.active }}</td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="8">No Best Developer Tool projects yet.</td>
+          <td colspan="5">No projects eligible for {{ prize_label }} yet.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if prize_items | length > 10 %}
+    <button class="see-more-btn neutral" data-prize="{{ prize_id }}" style="margin-top:0.5em">See More ({{ prize_items | length - 10 }} more)</button>
+    {% endif %}
   </div>
-  <div class="api-link">
-    <a href="{{ url_for('dev_tool_dump') }}">Download Best Developer Tool CSV</a>
-  </div>
+</div>
+{% endfor %}
+<div class="api-link" style="margin-bottom: 1em;">
+  <a href="{{ url_for('prizes_dump') }}">Download Prizes CSV</a>
 </div>
 
 <div class="item">
@@ -248,6 +252,10 @@
                 <option value="" {{ 'selected' if not annotator.path_preference else '' }}>Any</option>
                 <option value="general" {{ 'selected' if annotator.path_preference == 'general' else '' }}>General</option>
                 <option value="pro" {{ 'selected' if annotator.path_preference == 'pro' else '' }}>Pro</option>
+                <option value="ui_ux" {{ 'selected' if annotator.path_preference == 'ui_ux' else '' }}>Best UI/UX Design</option>
+                <option value="social_impact" {{ 'selected' if annotator.path_preference == 'social_impact' else '' }}>Best Social Impact</option>
+                <option value="creative" {{ 'selected' if annotator.path_preference == 'creative' else '' }}>Most Creative</option>
+                <option value="useless" {{ 'selected' if annotator.path_preference == 'useless' else '' }}>Most Useless</option>
               </select>
               <input type="submit" name="action" value="Patch" class="neutral">
               <input type="hidden" name="annotator_id" value="{{ annotator.id }}">
@@ -294,7 +302,7 @@
     <h2>Add Projects</h2>
   </div>
   <div class="info">
-    <p>Add name, location, description (CSV format). Optionally include path (general/pro) and best_dev_tool (true/false) as 4th/5th columns.</p>
+    <p>Add name, location, description (CSV format). Optionally include path (general/pro) as 4th column, and a semicolon-separated prize list as 5th column (e.g. <code>ui_ux;social_impact</code>). Valid prize keys: <code>ui_ux</code>, <code>social_impact</code>, <code>creative</code>, <code>useless</code>.</p>
     <textarea name="data" form="item_form"></textarea>
     <form action="{{ url_for('item') }}" method="post" id="item_form" enctype="multipart/form-data">
       <div class="upload-container">
@@ -308,12 +316,6 @@
           <option value="pro">Pro</option>
         </select>
       </div>
-      <div class="upload-container">
-        <label>
-          <input type="checkbox" name="default_best_dev_tool">
-          Mark uploaded projects as Best Developer Tool by default
-        </label>
-      </div>
       <input type="submit" name="action" value="Submit" class="button-full positive">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     </form>
@@ -324,7 +326,7 @@
     <h2>Add Judges</h2>
   </div>
   <div class="info">
-    <p>Add name, email, description, general/pro (CSV format)</p>
+    <p>Add name, email, description (CSV format). Optionally include a preference as 4th column. Valid values: <code>general</code>, <code>pro</code>, <code>ui_ux</code>, <code>social_impact</code>, <code>creative</code>, <code>useless</code>. Leave blank for no preference (judges all active items).</p>
     <textarea name="data" form="annotator_form"></textarea>
     <form action="{{ url_for('annotator') }}" method="post" id="annotator_form" enctype="multipart/form-data">
       <div class="upload-container">
@@ -374,12 +376,29 @@
 var tables = [
   document.getElementById('items'),
   document.getElementById('annotators'),
-  document.getElementById('devtool'),
   document.getElementById('path-general'),
   document.getElementById('path-pro'),
+  document.getElementById('prize-ui-ux'),
+  document.getElementById('prize-social-impact'),
+  document.getElementById('prize-creative'),
+  document.getElementById('prize-useless'),
 ];
 for (var i = 0; i < tables.length; i++) {
   new Tablesort(tables[i]);
 }
+document.querySelectorAll('.see-more-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var prize = btn.getAttribute('data-prize');
+    var ranked = btn.getAttribute('data-ranked');
+    if (prize) {
+      document.querySelectorAll('.prize-extra-' + prize).forEach(function(row) { row.style.display = ''; });
+    } else if (ranked) {
+      document.querySelectorAll('.ranked-extra-' + ranked).forEach(function(row) { row.style.display = ''; });
+    } else {
+      document.querySelectorAll('.items-extra').forEach(function(row) { row.style.display = ''; });
+    }
+    btn.style.display = 'none';
+  });
+});
 </script>
 {% endblock %}
