@@ -235,7 +235,7 @@ def maybe_init_annotator():
             items = preferred_items(annotator)
             if items:
                 annotator.update_next(choice(items))
-                db.session.commit()
+            db.session.commit()
     with_retries(tx)
 
 def choose_next(annotator):
