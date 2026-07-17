@@ -26,10 +26,10 @@ if [ "$PYTHON_VERSION" -lt 38 ]; then
 fi
 info "Python: $(python3 --version)"
 
-if ! command -v psql &>/dev/null; then
-    error "PostgreSQL is required but psql was not found. Install PostgreSQL and make sure it's running."
+if ! command -v docker &>/dev/null; then
+    error "Docker is required but not found. Install Docker Desktop from https://docker.com"
 fi
-info "PostgreSQL: $(psql --version)"
+info "Docker: $(docker --version)"
 
 # --- Virtual environment ---
 
@@ -66,14 +66,14 @@ secret_key: "dev-secret-change-me-please-1234567890"
 server_name: null
 proxy: false
 
-db_uri: "postgresql://localhost/gavel"
+db_uri: "postgresql://postgres:postgres@localhost:5432/gavel"
 
 broker_uri: null
 
 use_sendgrid: false
 sendgrid_api_key: null
 
-min_views: 2
+min_views: 1
 timeout: 5.0
 stateless_logins: true
 
@@ -90,21 +90,42 @@ else
     info "config.yaml already exists, skipping."
 fi
 
-# --- Database ---
+# --- Docker Postgres ---
 
+CONTAINER_NAME="gavel-postgres"
 DB_NAME="gavel"
+DB_USER="postgres"
+DB_PASS="postgres"
+DB_PORT="5432"
 
-if psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
-    warn "Database '$DB_NAME' already exists, skipping creation."
+if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    info "Postgres container '$CONTAINER_NAME' is already running."
+elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    info "Starting existing Postgres container '$CONTAINER_NAME'..."
+    docker start "$CONTAINER_NAME"
 else
-    info "Creating database '$DB_NAME'..."
-    if ! createdb "$DB_NAME" 2>/dev/null; then
-        warn "createdb failed. Trying with psql directly..."
-        psql postgres -c "CREATE DATABASE $DB_NAME;" || \
-            error "Could not create database '$DB_NAME'. Make sure PostgreSQL is running and your user has create privileges."
-    fi
-    info "Database created."
+    info "Creating Postgres container '$CONTAINER_NAME'..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        -e POSTGRES_PASSWORD="$DB_PASS" \
+        -e POSTGRES_DB="$DB_NAME" \
+        -p "${DB_PORT}:5432" \
+        postgres:15
 fi
+
+info "Waiting for Postgres to be ready..."
+for i in $(seq 1 20); do
+    if docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" -q 2>/dev/null; then
+        break
+    fi
+    if [ "$i" -eq 20 ]; then
+        error "Postgres did not become ready in time."
+    fi
+    sleep 1
+done
+info "Postgres is ready."
+
+# --- Database schema ---
 
 info "Initializing database schema..."
 python initialize.py
